@@ -1,65 +1,71 @@
 #include <iostream>
-#include <cmath>
-#include <mpi.h>
-
-using namespace std;
+#include <math.h>
+#include <ctime>
+#include <mpi.h>  // Добавляем заголовок MPI
+#include <chrono>
 
 #define NUM 5
 
 double refer = 2.094395;
 
-double integral(int q, double h, int rank, int size)
-{
-    double local_sum = 0.0;
-    double global_sum = 0.0;
-    int start = (q / size) * rank;
-    int end = (q / size) * (rank + 1);
-    if (rank == size - 1)
-        end = q;
-
-    for (int i = start; i < end; i++)
-    {
-        local_sum += (4 / sqrt(4 - pow((h * i + h / 2), 2))) * h;
-    }
-    
-    MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    return global_sum;
-}
-
-int main(int argc, char **argv)
-{
-    MPI_Init(&argc, &argv);
+double integral(int q, double h) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    double a = 0, b = 1;
+    double local_sum = 0.0;
+    double global_sum = 0.0;
+
+    // Распределение работы между процессами
+    int chunk = q / size;
+    int start = rank * chunk;
+    int end = (rank == size - 1) ? q : start + chunk;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    // Локальные вычисления
+    for (int i = start; i < end; i++) {
+        double x = h * i + h / 2;
+        local_sum += (4.0 / sqrt(4.0 - x * x)) * h;
+    }
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration = t2 - t1;
+
+    // Сбор результатов на процессе 0
+    MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    // Вывод времени только на root-процессе
+    if (rank == 0) {
+        std::cout << "Duration: " << duration.count() << " seconds" << std::endl;
+    }
+
+    return global_sum;
+}
+
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);  // Инициализация MPI
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    double a = 0, b = 1, res;
     int q[NUM] = {10000, 100000, 1000000, 10000000, 100000000};
     double h[NUM];
-    
-    if (rank == 0) printf("Running MPI version\n");
-    
-    for (int i = 0; i < NUM; i++)
-    {
-        h[i] = (b - a) / (double)(q[i]);
-        if (rank == 0)
-        {
-            printf("q = %i \n", q[i]);
-            printf("h = %f \n", h[i]);
-        }
 
-        double start_time = MPI_Wtime();
-        double res = integral(q[i], h[i], rank, size);
-        double end_time = MPI_Wtime();
-        
-        if (rank == 0)
-        {
-            printf("res = %f \n", res);
-            printf("err = %e \n", abs(res - refer));
-            printf("Duration: %f seconds\n\n", end_time - start_time);
+    for (int i = 0; i < NUM; i++) {
+        h[i] = (b - a) / static_cast<double>(q[i]);
+        if (rank == 0) {  // Вывод параметров только на root-процессе
+            std::cout << "q = " << q[i] << std::endl;
+            std::cout << "h = " << h[i] << std::endl;
+        }
+        res = integral(q[i], h[i]);
+        if (rank == 0) {  // Вывод результатов только на root-процессе
+            std::cout << "res = " << res << std::endl;
+            std::cout << "err = " << fabs(res - refer) << "\n\n";
         }
     }
-    
-    MPI_Finalize();
+
+    MPI_Finalize();  // Завершение MPI
     return 0;
 }
