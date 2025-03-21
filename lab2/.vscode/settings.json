@@ -4,7 +4,6 @@
         "thread": "cpp",
         "exception": "cpp",
         "iostream": "cpp",
-        "vector": "cpp",
-        "chrono": "cpp"
+        "vector": "cpp"
     }
 }
